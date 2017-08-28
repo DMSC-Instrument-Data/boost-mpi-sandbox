@@ -120,11 +120,12 @@ int main(int argc, char **argv) {
   int max_size = 128 * 1024 * 1024;
 
   // Four ways to send vector:
-  // 1. send_raw_known_size -- fast
+  // 1. send_raw_known_size -- fast, but not feasible in practice since we have
+  //                           random number of events
   // 2. send_boost -- 2 orders of magnitude slower
   // 3. send_raw_unknown_size -- fast (except for short length vectors)
   // 4. send_boost_skeleton -- fast (except for short/medium length vectors)
-  benchmark_range(min_size, max_size, send_raw_known_size);
+  benchmark_range(min_size, max_size, send_raw_unknown_size);
 
   return 0;
 }
