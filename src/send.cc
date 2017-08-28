@@ -26,7 +26,7 @@ void send_raw_known_size(mpi::communicator &comm, std::vector<double> &data) {
   }
 }
 
-// Send a vector. Boost hast to deal with sending the vector length etc.
+// Send a vector. Boost has to deal with sending the vector length etc.
 void send_boost(mpi::communicator &comm, std::vector<double> &data) {
   auto size = static_cast<int>(data.size());
   int tag = 0;
@@ -37,8 +37,7 @@ void send_boost(mpi::communicator &comm, std::vector<double> &data) {
   }
 }
 
-// Send block of memory of unknown size, manually exchanging the size in a first
-// step.
+// Send block of memory of unknown size, manually exchange size in first step.
 void send_raw_unknown_size(mpi::communicator &comm, std::vector<double> &data) {
   auto size = static_cast<int>(data.size());
   int tag = 0;
@@ -68,6 +67,7 @@ void send_boost_skeleton(mpi::communicator &comm, std::vector<double> &data) {
   }
 }
 
+// Benchmark helper.
 template <class Func, class... Args>
 double run(const int count, mpi::communicator &comm, const Func &func,
            Args &&... args) {
@@ -84,6 +84,7 @@ double run(const int count, mpi::communicator &comm, const Func &func,
          (1000000000);
 }
 
+// Benchmark helper.
 template <class... Args>
 std::pair<double, int> benchmark(mpi::communicator &comm, Args &&... args) {
   // Trial run to compute repeat for running roughly one second
@@ -93,6 +94,7 @@ std::pair<double, int> benchmark(mpi::communicator &comm, Args &&... args) {
   return {run(repeat, comm, args...), repeat};
 }
 
+// Benchmark helper.
 template <class Func>
 void benchmark_range(const int min, const int max, const Func &func) {
   mpi::communicator comm;

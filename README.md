@@ -20,7 +20,7 @@ Test size and different variants can be adapted in the source code (`src/send.cc
 
 ## TODO
 
-For the application of loading neutron event data from Nexus files we need to send vectors of random lengths (random number of neutrons hitting each pixel) from MPI loading the file to all other MPI ranks that hold the respective pixels of the instrument.
+For the application of loading neutron event data from Nexus files we need to send vectors of random lengths (random number of neutrons hitting each pixel) from MPI ranks loading the file to all other MPI ranks that hold the respective pixels of the instrument.
 For benchmarking purposes a vector of any type such as `double` is sufficient, whereas actually we will be dealing with spectrum indices, time-of-flight, and pulse time.
 
 1. Try and benchmark non-blocking sends (`boost::mpi::communicator::isend`/`MPI_Isend`) and/or receives (`boost::mpi::communicator::irecv`/`MPI_Irecv`).
