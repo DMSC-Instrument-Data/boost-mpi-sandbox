@@ -81,17 +81,17 @@ double run(const int count, mpi::communicator &comm, const Func &func,
   std::chrono::duration<double> elapsed = end - start;
   return (double)std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed)
              .count() /
-         (1000000000);
+         count / (1000000000);
 }
 
 // Benchmark helper.
 template <class... Args>
-std::pair<double, int> benchmark(mpi::communicator &comm, Args &&... args) {
+double benchmark(mpi::communicator &comm, Args &&... args) {
   // Trial run to compute repeat for running roughly one second
   const auto trial = run(10, comm, args...);
-  int repeat = std::max(10, static_cast<int>(1.0 / (trial / 10)));
+  int repeat = std::max(10, static_cast<int>(1.0 / trial));
   mpi::broadcast(comm, repeat, 0);
-  return {run(repeat, comm, args...), repeat};
+  return run(repeat, comm, args...);
 }
 
 // Benchmark helper.
@@ -102,15 +102,10 @@ void benchmark_range(const int min, const int max, const Func &func) {
 
   while (size < max / sizeof(double)) {
     std::vector<double> data(size);
-
-    double seconds;
-    int repeat;
-    std::tie(seconds, repeat) = benchmark(comm, func, data);
-
+    double seconds = benchmark(comm, func, data);
     double kB = static_cast<double>(size * sizeof(double)) / (1024);
     if (comm.rank() == 0)
-      printf("%10.3lf kB bandwidth %5.0lf MB/s\n", kB,
-             repeat * kB / seconds / 1024);
+      printf("%10.3lf kB bandwidth %5.0lf MB/s\n", kB, kB / seconds / 1024);
     size *= 2;
   }
 }
