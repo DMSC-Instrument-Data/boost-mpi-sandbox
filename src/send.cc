@@ -7,48 +7,74 @@
 
 namespace mpi = boost::mpi;
 
+// See http://www.boost.org/doc/libs/1_58_0/doc/html/mpi/tutorial.html#mpi.performance_optimizations.
+// I tried to play with this but did not observe any improvement.
 // BOOST_IS_MPI_DATATYPE(std::vector<double>) // I think this would give nonsense
 // BOOST_CLASS_TRACKING(std::vector<double>,track_never) // does not help
 // BOOST_CLASS_IMPLEMENTATION(std::vector<double>,object_serializable) // does not help
 
-void send(mpi::communicator &comm, std::vector<double> &data) {
+// Send block of memory of known size. This is basically what MPI_Send does,
+// boost is probalby ismply forwarding internally.
+void send_raw_known_size(mpi::communicator &comm, std::vector<double> &data) {
   auto size = static_cast<int>(data.size());
   int tag = 0;
   if (comm.rank() == 0) {
-    // fast (except for short length vectors)
+    comm.send(1, tag, data.data(), size);
+  } else {
+    int length;
+    comm.recv(0, tag, data.data(), size);
+  }
+}
+
+// Send a vector. Boost hast to deal with sending the vector length etc.
+void send_boost(mpi::communicator &comm, std::vector<double> &data) {
+  auto size = static_cast<int>(data.size());
+  int tag = 0;
+  if (comm.rank() == 0) {
+    comm.send(1, tag, data);
+  } else {
+    comm.recv(0, tag, data);
+  }
+}
+
+// Send block of memory of unknown size, manually exchanging the size in a first
+// step.
+void send_raw_unknown_size(mpi::communicator &comm, std::vector<double> &data) {
+  auto size = static_cast<int>(data.size());
+  int tag = 0;
+  if (comm.rank() == 0) {
     comm.send(1, tag, size);
     comm.send(1, tag, data.data(), size);
-
-    // fast (except for short/medium length vectors)
-    // comm.send(1, tag, mpi::skeleton(data));
-    // comm.send(1, tag, mpi::get_content(data));
-
-    // fast
-    // comm.send(1, tag, data.data(), size);
-
-    // 2 orders of magnitude slower
-    // comm.send(1, tag, data);
   } else {
     int length;
     comm.recv(0, tag, length);
     data.resize(length);
     comm.recv(0, tag, data.data(), length);
-
-    // comm.recv(0, tag, mpi::skeleton(data));
-    // comm.recv(0, tag, mpi::get_content(data));
-
-    // comm.recv(0, tag, data.data(), size);
-
-    // comm.recv(0, tag, data);
   }
 }
 
-template <class... Args>
-double run(const int count, mpi::communicator &comm, Args &&... args) {
+// Send a vector using boost::mpi::skeleton, which is exchanging the data
+// structure beforehand for better performance.
+void send_boost_skeleton(mpi::communicator &comm, std::vector<double> &data) {
+  auto size = static_cast<int>(data.size());
+  int tag = 0;
+  if (comm.rank() == 0) {
+    comm.send(1, tag, mpi::skeleton(data));
+    comm.send(1, tag, mpi::get_content(data));
+  } else {
+    int length;
+    comm.recv(0, tag, mpi::skeleton(data));
+    comm.recv(0, tag, mpi::get_content(data));
+  }
+}
+
+template <class Func, class... Args>
+double run(const int count, mpi::communicator &comm, const Func &func,
+           Args &&... args) {
   comm.barrier();
   const auto start = std::chrono::system_clock::now();
   for (int r = 0; r < count; ++r) {
-    send(comm, args...);
+    func(comm, args...);
   }
   const auto end = std::chrono::system_clock::now();
   comm.barrier();
@@ -61,27 +87,44 @@ double run(const int count, mpi::communicator &comm, Args &&... args) {
 template <class... Args>
 std::pair<double, int> benchmark(mpi::communicator &comm, Args &&... args) {
   // Trial run to compute repeat for running roughly one second
-  const auto trial = run(100, comm, args...);
-  int repeat = std::max(100, static_cast<int>(1.0 / (trial / 100)));
+  const auto trial = run(10, comm, args...);
+  int repeat = std::max(10, static_cast<int>(1.0 / (trial / 10)));
   mpi::broadcast(comm, repeat, 0);
   return {run(repeat, comm, args...), repeat};
 }
 
+template <class Func>
+void benchmark_range(const int min, const int max, const Func &func) {
+  mpi::communicator comm;
+  int size = min / sizeof(double);
+
+  while (size < max / sizeof(double)) {
+    std::vector<double> data(size);
+
+    double seconds;
+    int repeat;
+    std::tie(seconds, repeat) = benchmark(comm, func, data);
+
+    double kB = static_cast<double>(size * sizeof(double)) / (1024);
+    if (comm.rank() == 0)
+      printf("%10.3lf kB bandwidth %5.0lf MB/s\n", kB,
+             repeat * kB / seconds / 1024);
+    size *= 2;
+  }
+}
+
 int main(int argc, char **argv) {
   mpi::environment env;
-  mpi::communicator comm;
 
-  auto size = std::max(1, atoi(argv[1]) / static_cast<int>(sizeof(double)));
-  std::vector<double> data(size);
+  int min_size = 128;
+  int max_size = 128 * 1024 * 1024;
 
-  double seconds;
-  int repeat;
-  std::tie(seconds, repeat) = benchmark(comm, data);
-
-  double MB = static_cast<double>(size * sizeof(double)) / (1024 * 1024);
-  if (comm.rank() == 0)
-    printf("%lf MB %lf seconds bandwidth %lf MB/s\n", MB, seconds,
-           repeat * MB / seconds);
+  // 4 ways to send vector:
+  // send_raw_known_size -- fast
+  // send_boost -- 2 orders of magnitude slower
+  // send_raw_unknown_size -- fast (except for short length vectors)
+  // send_boost_skeleton -- fast (except for short/medium length vectors)
+  benchmark_range(min_size, max_size, send_raw_known_size);
 
   return 0;
 }
